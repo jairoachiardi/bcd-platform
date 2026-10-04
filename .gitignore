@@ -1,0 +1,28 @@
+﻿# --- Secretos: NUNCA al repositorio ---
+.env
+*.env
+*.key
+*.pem
+*.pfx
+secrets/
+appsettings.*.local.json
+
+# --- Compilados C# / Visual Studio ---
+bin/
+obj/
+.vs/
+*.user
+
+# --- Python ---
+__pycache__/
+.venv/
+*.pyc
+
+# --- Revit: copias de respaldo automáticas ---
+*.[0-9][0-9][0-9][0-9].rvt
+*.[0-9][0-9][0-9][0-9].rfa
+
+# --- Temporales de Office y del sistema ---
+~$*
+Thumbs.db
+desktop.ini

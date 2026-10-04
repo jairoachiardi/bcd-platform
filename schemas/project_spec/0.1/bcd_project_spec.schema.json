@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bimbcd.com/schemas/bcd_project_spec/0.1",
+  "title": "BCD Project Spec v0.1 — Inicio de proyecto, ejes y niveles",
+  "description": "Contrato neutral entre el diálogo con Claude y los ejecutores (Revit vía BCD_RevitMcpBridge / IFC vía IfcOpenShell-Bonsai). Unidades de longitud SIEMPRE en milímetros dentro del JSON, independientemente de las unidades de visualización.",
+  "type": "object",
+  "required": ["schema_version", "project", "site", "conventions", "buildings"],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+
+    "project": {
+      "type": "object",
+      "required": ["code", "name", "phase"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z0-9]{2,10}$", "description": "Código corto del proyecto, ej. MZC" },
+        "name": { "type": "string" },
+        "client": { "type": ["string", "null"] },
+        "phase": { "enum": ["Diseño", "Construcción", "Operación"] },
+        "discipline": { "enum": ["ARQ", "EST", "HID", "ELE", "MEC", "COORD"] },
+        "template": { "type": ["string", "null"], "description": "Ruta o nombre de la plantilla (.rte / IFC base) según disciplina" },
+        "parameters_file": { "type": ["string", "null"], "description": "Ruta al .txt de parámetros compartidos BCD" }
+      }
+    },
+
+    "site": {
+      "type": "object",
+      "required": ["address_text", "country"],
+      "properties": {
+        "address_text": { "type": "string", "description": "Ubicación tal como la dio el usuario" },
+        "city": { "type": ["string", "null"] },
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$", "description": "ISO 3166-1 alfa-2: CO, GT, DO, ES" },
+        "latitude": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+        "longitude": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+        "elevation_msnm": { "type": ["number", "null"] },
+        "crs_epsg": { "type": ["integer", "null"], "description": "Ej. 9377 (Origen Nacional CTM12, Colombia)" },
+        "survey_point": {
+          "type": "object",
+          "description": "Coordenadas proyectadas del punto de levantamiento (mm)",
+          "properties": {
+            "east_mm": { "type": ["number", "null"] },
+            "north_mm": { "type": ["number", "null"] },
+            "elev_mm": { "type": ["number", "null"] }
+          }
+        },
+        "true_north_deg": { "type": "number", "default": 0, "description": "Ángulo del norte real respecto al norte del proyecto, positivo antihorario" },
+        "coordinates_precision": { "enum": ["aproximada", "topografía"], "default": "aproximada" }
+      }
+    },
+
+    "conventions": {
+      "type": "object",
+      "required": ["language", "units"],
+      "properties": {
+        "language": { "enum": ["es", "en"] },
+        "units": {
+          "type": "object",
+          "properties": {
+            "system": { "enum": ["SI", "Imperial"], "default": "SI" },
+            "length_display": { "enum": ["mm", "cm", "m"], "default": "mm" },
+            "area": { "enum": ["m2", "ft2"], "default": "m2" },
+            "volume": { "enum": ["m3", "ft3"], "default": "m3" },
+            "decimal_separator": { "enum": [",", "."], "default": "," }
+          }
+        },
+        "element_code_pattern": { "type": "string", "default": "[MOD]-[ZONA]-[NIVEL]-[CAT]-[NNNN]" }
+      }
+    },
+
+    "buildings": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Cada edificación independiente (torre, sala de ventas, etc.) con su propia malla y niveles. Su 'mod' es el [MOD] del código de elementos.",
+      "items": { "$ref": "#/$defs/building" }
+    },
+
+    "dialog_status": {
+      "type": "object",
+      "description": "Permite retomar el diálogo donde quedó. Ningún ejecutor corre un bloque con confirmed=false.",
+      "properties": {
+        "site_confirmed": { "type": "boolean", "default": false },
+        "conventions_confirmed": { "type": "boolean", "default": false },
+        "grids_confirmed": { "type": "boolean", "default": false },
+        "levels_confirmed": { "type": "boolean", "default": false }
+      }
+    }
+  },
+
+  "$defs": {
+    "building": {
+      "type": "object",
+      "required": ["mod", "name", "grids", "levels"],
+      "properties": {
+        "mod": { "type": "string", "pattern": "^[A-Z0-9]{2,4}$", "description": "Ej. T2, SV" },
+        "name": { "type": "string" },
+        "temporary": { "type": "boolean", "default": false },
+        "origin_offset_mm": {
+          "type": "object",
+          "description": "Posición de la intersección A-1 respecto al punto base del proyecto",
+          "properties": { "x": { "type": "number", "default": 0 }, "y": { "type": "number", "default": 0 } }
+        },
+        "rotation_deg": { "type": "number", "default": 0 },
+        "grids": {
+          "type": "object",
+          "required": ["numeric", "alpha"],
+          "properties": {
+            "numeric": { "$ref": "#/$defs/grid_family" },
+            "alpha": { "$ref": "#/$defs/grid_family" },
+            "extension_mm": { "type": "number", "default": 2000, "description": "Prolongación de ejes más allá del último eje perpendicular" }
+          }
+        },
+        "levels": {
+          "type": "object",
+          "required": ["reference_level", "below", "above"],
+          "properties": {
+            "reference_level": {
+              "type": "object",
+              "description": "Nivel ±0.00 (generalmente piso 1 / acceso)",
+              "properties": {
+                "name": { "type": "string", "default": "N01" },
+                "elevation_mm": { "type": "number", "default": 0 }
+              }
+            },
+            "below": {
+              "type": "array",
+              "description": "Sótanos de arriba hacia abajo. Cada altura = distancia de ese sótano al nivel superior.",
+              "items": { "$ref": "#/$defs/level_step" }
+            },
+            "above": {
+              "type": "array",
+              "description": "Pisos sobre el de referencia, de abajo hacia arriba. Altura = entrepiso desde el nivel inferior. Incluir cubierta y tanques si aplica.",
+              "items": { "$ref": "#/$defs/level_step" }
+            },
+            "naming": {
+              "type": "object",
+              "properties": {
+                "basement_prefix": { "type": "string", "default": "S" },
+                "floor_prefix": { "type": "string", "default": "N" },
+                "digits": { "type": "integer", "default": 2 }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "grid_family": {
+      "type": "object",
+      "required": ["count", "direction", "spacings_mm"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 1 },
+        "first_label": { "type": "string", "description": "Ej. '1' o 'A'" },
+        "skip_labels": { "type": "array", "items": { "type": "string" }, "default": ["I", "O"], "description": "Letras omitidas para evitar confusión con 1 y 0" },
+        "orientation": { "enum": ["vertical", "horizontal"], "description": "Dirección en planta de las LÍNEAS de eje" },
+        "direction": { "enum": ["oeste→este", "este→oeste", "sur→norte", "norte→sur"], "description": "Sentido en que avanza la numeración/letras" },
+        "spacings_source": { "type": ["string", "null"], "description": "Como lo dictó el usuario, ej. '4@6,0 + 2@7,5'" },
+        "spacings_mm": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "description": "Distancias expandidas entre ejes consecutivos. Longitud = count - 1" }
+      }
+    },
+
+    "level_step": {
+      "type": "object",
+      "required": ["height_mm"],
+      "properties": {
+        "name": { "type": ["string", "null"], "description": "Si es null se genera con la regla de naming" },
+        "height_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "use": { "type": ["string", "null"], "description": "Ej. parqueadero, vivienda, cubierta, tanques" }
+      }
+    }
+  }
+}
